@@ -4,7 +4,7 @@ from document_processor import DocumentProcessor
 from vector_store import VectorStore
 from ai_generator import AIGenerator
 from session_manager import SessionManager
-from search_tools import ToolManager, CourseSearchTool
+from search_tools import ToolManager, CourseSearchTool, CourseOutlineTool
 from models import Course, Lesson, CourseChunk
 
 class RAGSystem:
@@ -23,6 +23,8 @@ class RAGSystem:
         self.tool_manager = ToolManager()
         self.search_tool = CourseSearchTool(self.vector_store)
         self.tool_manager.register_tool(self.search_tool)
+        self.outline_tool = CourseOutlineTool(self.vector_store)
+        self.tool_manager.register_tool(self.outline_tool)
     
     def add_course_document(self, file_path: str) -> Tuple[Course, int]:
         """
@@ -111,19 +113,24 @@ class RAGSystem:
             Tuple of (response, sources list - empty for tool-based approach)
         """
         # Create prompt for the AI with clear instructions
-        prompt = f"""Answer this question about course materials: {query}"""
+        prompt = query
         
         # Get conversation history if session exists
         history = None
         if session_id:
             history = self.session_manager.get_conversation_history(session_id)
-        
+
+        # Detect outline intent to force the correct tool
+        outline_keywords = {"outline", "syllabus", "lesson list", "what lessons", "table of contents", "course structure"}
+        forced_tool = "get_course_outline" if any(kw in query.lower() for kw in outline_keywords) else None
+
         # Generate response using AI with tools
         response = self.ai_generator.generate_response(
             query=prompt,
             conversation_history=history,
             tools=self.tool_manager.get_tool_definitions(),
-            tool_manager=self.tool_manager
+            tool_manager=self.tool_manager,
+            forced_tool=forced_tool
         )
         
         # Get sources from the search tool

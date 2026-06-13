@@ -5,17 +5,22 @@ class AIGenerator:
     """Handles interactions with Anthropic's Claude API for generating responses"""
     
     # Static system prompt to avoid rebuilding on each call
-    SYSTEM_PROMPT = """ You are an AI assistant specialized in course materials and educational content with access to a comprehensive search tool for course information.
+    SYSTEM_PROMPT = """ You are an AI assistant specialized in course materials and educational content with access to two tools: one for course outlines and one for searching course content.
 
-Search Tool Usage:
-- Use the search tool **only** for questions about specific course content or detailed educational materials
-- **One search per query maximum**
+Tool Selection — choose exactly one tool per query, never both:
+- **get_course_outline**: Use when the user asks for a course outline, syllabus, lesson list, table of contents, what lessons a course has, or what topics a course covers at a high level
+- **search_course_content**: Use when the user asks about specific concepts, explanations, or details *within* course material
+
+Course Outline Responses:
+- When presenting an outline, include: course title as a heading, course link, and a numbered list of lesson titles
+
+Search Responses:
 - Synthesize search results into accurate, fact-based responses
 - If search yields no results, state this clearly without offering alternatives
+- **One search per query maximum**
 
 Response Protocol:
-- **General knowledge questions**: Answer using existing knowledge without searching
-- **Course-specific questions**: Search first, then answer
+- **General knowledge questions**: Answer using existing knowledge without using any tool
 - **No meta-commentary**:
  - Provide direct answers only — no reasoning process, search explanations, or question-type analysis
  - Do not mention "based on the search results"
@@ -43,38 +48,43 @@ Provide only the direct answer to what was asked.
     def generate_response(self, query: str,
                          conversation_history: Optional[str] = None,
                          tools: Optional[List] = None,
-                         tool_manager=None) -> str:
+                         tool_manager=None,
+                         forced_tool: Optional[str] = None) -> str:
         """
         Generate AI response with optional tool usage and conversation context.
-        
+
         Args:
             query: The user's question or request
             conversation_history: Previous messages for context
             tools: Available tools the AI can use
             tool_manager: Manager to execute tools
-            
+            forced_tool: If set, force the model to call this specific tool
+
         Returns:
             Generated response as string
         """
-        
+
         # Build system content efficiently - avoid string ops when possible
         system_content = (
             f"{self.SYSTEM_PROMPT}\n\nPrevious conversation:\n{conversation_history}"
-            if conversation_history 
+            if conversation_history
             else self.SYSTEM_PROMPT
         )
-        
+
         # Prepare API call parameters efficiently
         api_params = {
             **self.base_params,
             "messages": [{"role": "user", "content": query}],
             "system": system_content
         }
-        
+
         # Add tools if available
         if tools:
             api_params["tools"] = tools
-            api_params["tool_choice"] = {"type": "auto"}
+            if forced_tool:
+                api_params["tool_choice"] = {"type": "tool", "name": forced_tool}
+            else:
+                api_params["tool_choice"] = {"type": "auto"}
         
         # Get response from Claude
         response = self.client.messages.create(**api_params)
