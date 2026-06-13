@@ -74,3 +74,5 @@ All tunable parameters live in `backend/config.py` as a `Config` dataclass. The 
 
 - Always use `uv` for all Python commands — `uv run`, `uv sync`, `uv add`, `uv remove`. Never use `pip` directly.
 - When editing code, preserve existing empty lines and comments unless the code they describe is also being removed.
+- Structure commit messages as a short subject line followed by bullet points describing each change.
+- After merging a feature branch into main, delete the branch both locally and on the remote.
