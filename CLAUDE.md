@@ -69,3 +69,8 @@ Claude is given one tool (`search_course_content`) with `tool_choice: auto`. If 
 ### Config
 
 All tunable parameters live in `backend/config.py` as a `Config` dataclass. The active `ANTHROPIC_MODEL` string must be a current model ID — check `/claude-api` for valid IDs before changing it.
+
+## Development Rules
+
+- Always use `uv` for all Python commands — `uv run`, `uv sync`, `uv add`, `uv remove`. Never use `pip` directly.
+- When editing code, preserve existing empty lines and comments unless the code they describe is also being removed.
