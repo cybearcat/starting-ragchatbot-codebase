@@ -28,7 +28,7 @@ class CourseSearchTool(Tool):
         """Return Anthropic tool definition for this tool"""
         return {
             "name": "search_course_content",
-            "description": "Search course materials with smart course name matching and lesson filtering",
+            "description": "Search for specific concepts, explanations, or details within course lesson content. Do not use for course outlines, syllabi, or lesson lists — use get_course_outline for those.",
             "input_schema": {
                 "type": "object",
                 "properties": {
@@ -117,6 +117,54 @@ class CourseSearchTool(Tool):
         self.last_sources = sources
 
         return "\n\n".join(formatted)
+
+class CourseOutlineTool(Tool):
+    """Tool for retrieving a course's full outline from the course catalog"""
+
+    def __init__(self, vector_store: VectorStore):
+        self.store = vector_store
+
+    def get_tool_definition(self) -> Dict[str, Any]:
+        return {
+            "name": "get_course_outline",
+            "description": "Get the complete outline of a course: title, course link, and full lesson list with lesson numbers and titles",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "course_title": {
+                        "type": "string",
+                        "description": "Course title to retrieve outline for (partial matches work, e.g. 'MCP', 'Introduction')"
+                    }
+                },
+                "required": ["course_title"]
+            }
+        }
+
+    def execute(self, course_title: str) -> str:
+        exact_title = self.store._resolve_course_name(course_title)
+        if not exact_title:
+            return f"No course found matching '{course_title}'."
+
+        all_courses = self.store.get_all_courses_metadata()
+        course = next((c for c in all_courses if c.get('title') == exact_title), None)
+
+        if not course:
+            return f"Course '{exact_title}' found but metadata unavailable."
+
+        course_link = course.get('course_link', '')
+        lessons = sorted(course.get('lessons', []), key=lambda l: l.get('lesson_number', 0))
+
+        lines = [f"Course: {exact_title}"]
+        if course_link:
+            lines.append(f"Link: {course_link}")
+        lines.append("Lessons:")
+        for lesson in lessons:
+            num = lesson.get('lesson_number')
+            title = lesson.get('lesson_title', 'Untitled')
+            lines.append(f"  {num}. {title}")
+
+        return "\n".join(lines)
+
 
 class ToolManager:
     """Manages available tools for the AI"""
