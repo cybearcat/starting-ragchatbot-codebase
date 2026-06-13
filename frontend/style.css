@@ -245,6 +245,32 @@ header h1 {
     color: var(--text-secondary);
 }
 
+.sources-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    padding-top: 0.35rem;
+}
+
+.source-tag {
+    display: inline-block;
+    padding: 0.2rem 0.65rem;
+    background: rgba(37, 99, 235, 0.12);
+    border: 1px solid rgba(37, 99, 235, 0.3);
+    border-radius: 999px;
+    font-size: 0.72rem;
+    color: #93c5fd;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.source-tag:hover {
+    background: rgba(37, 99, 235, 0.25);
+    border-color: rgba(37, 99, 235, 0.6);
+    color: #bfdbfe;
+}
+
 /* Markdown formatting styles */
 .message-content h1,
 .message-content h2,
