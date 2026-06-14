@@ -96,9 +96,9 @@ EOF
 )"
 ```
 
-Then immediately merge it:
+Then immediately merge it, passing `--repo` explicitly because `gh pr merge` without it can fail when the local branch tracks a fork:
 ```bash
-gh pr merge --merge --delete-branch
+gh pr merge <PR-number> --repo cybearcat/starting-ragchatbot-codebase --merge --delete-branch
 ```
 
 The `--delete-branch` flag removes the remote branch on merge.
