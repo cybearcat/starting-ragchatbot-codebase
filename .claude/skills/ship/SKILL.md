@@ -1,15 +1,15 @@
 ---
 name: ship
-description: Stage all changes, commit with a generated message, push to origin, and open a PR against cybearcat/starting-ragchatbot-codebase:main. Use when the user says "ship", "commit and push", "open a PR", or "create a PR".
+description: Create a feature branch, commit all changes with a bullet-point message, push, open and merge a PR into main, pull main, then delete the branch. Use when the user says "ship", "commit and push", "open a PR", or "create a PR".
 user-invocable: true
 allowed-tools:
   - Bash(git *)
   - Bash(gh *)
 ---
 
-# /ship — Commit, Push, and Open a PR
+# /ship — Branch, Commit, Merge, and Clean Up
 
-Stage changed files, write a commit, push to `origin`, and create a PR against `cybearcat/starting-ragchatbot-codebase:main` in one pass.
+Take all pending changes through a complete feature-branch lifecycle: create a branch, commit, push, open and merge a PR, then return main to a clean state.
 
 Arguments passed: `$ARGUMENTS`
 
@@ -17,47 +17,113 @@ Arguments passed: `$ARGUMENTS`
 
 ## Steps
 
-1. **Inspect state** — run these in parallel:
-   - `git status` to list modified/untracked files
-   - `git diff` to see all unstaged changes
-   - `git log --oneline -5` to read recent commit style
+### 1. Inspect state
 
-2. **Stage files** — add every modified tracked file. Do not use `git add .` or `git add -A`; add files by name to avoid accidentally staging `.env` or large binaries.
+Run in parallel:
+- `git status` — list modified/untracked files
+- `git diff` — see all unstaged changes
+- `git log --oneline -5` — read recent commit style
 
-3. **Write the commit message** following the project convention:
-   - Short subject line (imperative, ≤72 chars)
-   - Blank line
-   - One bullet point per logical change
-   - End with: `Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>`
-   - Pass via HEREDOC to avoid shell quoting issues
+If there are no staged or unstaged changes, say so and stop — do not create an empty commit.
 
-4. **Push** to `origin` with `-u` if the branch has no upstream yet, otherwise plain `git push origin HEAD`.
+Make sure you are on `main` before proceeding (or check out main first). The branch you create should diverge from main.
 
-5. **Create the PR** targeting `cybearcat/starting-ragchatbot-codebase:main`:
-   ```
-   gh pr create \
-     --repo cybearcat/starting-ragchatbot-codebase \
-     --base main \
-     --title "<title>" \
-     --body "$(cat <<'EOF'
-   ## Summary
-   - <bullet points>
+### 2. Draft the commit message
 
-   ## Test plan
-   - [ ] <what to verify>
+Write the commit message now, before creating the branch, so you can derive the branch name from it.
 
-   🤖 Generated with [Claude Code](https://claude.com/claude-code)
-   EOF
-   )"
-   ```
+Format:
+```
+<short subject line — imperative, ≤72 chars>
 
-6. **Report** — print the PR URL so the user can open it directly.
+- <one bullet per logical change>
+- <another change>
+- ...
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+```
+
+If `$ARGUMENTS` contains a hint, use it as the subject line.
+
+### 3. Create a feature branch
+
+Derive the branch name from the subject line: lowercase, spaces → hyphens, drop punctuation, max 40 chars.
+
+```bash
+git checkout -b <branch-name>
+```
+
+### 4. Stage and commit
+
+Add every modified tracked file by name — do not use `git add .` or `git add -A` to avoid accidentally staging `.env` or large binaries.
+
+Commit using a HEREDOC to avoid shell quoting issues:
+```bash
+git commit -m "$(cat <<'EOF'
+<subject line>
+
+- <bullet>
+- <bullet>
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+EOF
+)"
+```
+
+### 5. Push the branch
+
+```bash
+git push -u origin HEAD
+```
+
+### 6. Open and merge the PR
+
+Create the PR targeting `cybearcat/starting-ragchatbot-codebase:main`:
+```bash
+gh pr create \
+  --repo cybearcat/starting-ragchatbot-codebase \
+  --base main \
+  --title "<subject line>" \
+  --body "$(cat <<'EOF'
+## Summary
+- <bullet points matching the commit>
+
+## Test plan
+- [ ] <what to verify>
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+EOF
+)"
+```
+
+Then immediately merge it:
+```bash
+gh pr merge --merge --delete-branch
+```
+
+The `--delete-branch` flag removes the remote branch on merge.
+
+### 7. Return main to clean state
+
+```bash
+git checkout main
+git pull origin main
+```
+
+### 8. Delete the local branch
+
+```bash
+git branch -d <branch-name>
+```
+
+### 9. Report
+
+Print a one-line confirmation: the PR URL and the fact that `main` is now up to date.
 
 ---
 
 ## Notes
 
-- If there are no staged or unstaged changes, say so and stop — do not create an empty commit.
-- If the current branch is `main`, warn the user and stop — changes should be on a feature branch.
-- Never use `--no-verify` or `--force`.
-- If `$ARGUMENTS` contains a commit message hint, use it as the subject line rather than generating one.
+- Never use `--no-verify`, `--force`, or `--no-gpg-sign`.
+- If the merge fails (e.g., CI required), report the PR URL and stop — do not force-merge.
+- If `gh pr merge` deletes the remote branch, skip any manual `git push origin --delete` to avoid a redundant error.
