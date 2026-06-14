@@ -5,14 +5,12 @@ from vector_store import VectorStore
 from ai_generator import AIGenerator
 from session_manager import SessionManager
 from search_tools import ToolManager, CourseSearchTool, CourseOutlineTool
-from models import Course, Lesson, CourseChunk
+from models import Course
 
 class RAGSystem:
     """Main orchestrator for the Retrieval-Augmented Generation system"""
     
     def __init__(self, config):
-        self.config = config
-        
         # Initialize core components
         self.document_processor = DocumentProcessor(config.CHUNK_SIZE, config.CHUNK_OVERLAP)
         self.vector_store = VectorStore(config.CHROMA_PATH, config.EMBEDDING_MODEL, config.MAX_RESULTS)
@@ -26,7 +24,7 @@ class RAGSystem:
         self.outline_tool = CourseOutlineTool(self.vector_store)
         self.tool_manager.register_tool(self.outline_tool)
     
-    def add_course_document(self, file_path: str) -> Tuple[Course, int]:
+    def add_course_document(self, file_path: str) -> Tuple[Optional[Course], int]:
         """
         Add a single course document to the knowledge base.
         
@@ -37,7 +35,6 @@ class RAGSystem:
             Tuple of (Course object, number of chunks created)
         """
         try:
-            # Process the document
             course, course_chunks = self.document_processor.process_course_document(file_path)
             
             # Add course metadata to vector store for semantic search
@@ -80,24 +77,23 @@ class RAGSystem:
         # Process each file in the folder
         for file_name in os.listdir(folder_path):
             file_path = os.path.join(folder_path, file_name)
-            if os.path.isfile(file_path) and file_name.lower().endswith(('.pdf', '.docx', '.txt')):
-                try:
-                    # Check if this course might already exist
-                    # We'll process the document to get the course ID, but only add if new
-                    course, course_chunks = self.document_processor.process_course_document(file_path)
-                    
-                    if course and course.title not in existing_course_titles:
-                        # This is a new course - add it to the vector store
-                        self.vector_store.add_course_metadata(course)
-                        self.vector_store.add_course_content(course_chunks)
-                        total_courses += 1
-                        total_chunks += len(course_chunks)
-                        print(f"Added new course: {course.title} ({len(course_chunks)} chunks)")
-                        existing_course_titles.add(course.title)
-                    elif course:
-                        print(f"Course already exists: {course.title} - skipping")
-                except Exception as e:
-                    print(f"Error processing {file_name}: {e}")
+            if not (os.path.isfile(file_path) and file_name.lower().endswith(('.pdf', '.docx', '.txt'))):
+                continue
+            try:
+                course, course_chunks = self.document_processor.process_course_document(file_path)
+                if not course:
+                    continue
+                if course.title in existing_course_titles:
+                    print(f"Course already exists: {course.title} - skipping")
+                    continue
+                self.vector_store.add_course_metadata(course)
+                self.vector_store.add_course_content(course_chunks)
+                existing_course_titles.add(course.title)
+                total_courses += 1
+                total_chunks += len(course_chunks)
+                print(f"Added new course: {course.title} ({len(course_chunks)} chunks)")
+            except Exception as e:
+                print(f"Error processing {file_name}: {e}")
         
         return total_courses, total_chunks
     
@@ -112,9 +108,6 @@ class RAGSystem:
         Returns:
             Tuple of (response, sources list - empty for tool-based approach)
         """
-        # Create prompt for the AI with clear instructions
-        prompt = query
-        
         # Get conversation history if session exists
         history = None
         if session_id:
@@ -126,24 +119,20 @@ class RAGSystem:
 
         # Generate response using AI with tools
         response = self.ai_generator.generate_response(
-            query=prompt,
+            query=query,
             conversation_history=history,
             tools=self.tool_manager.get_tool_definitions(),
             tool_manager=self.tool_manager,
             forced_tool=forced_tool
         )
         
-        # Get sources from the search tool
         sources = self.tool_manager.get_last_sources()
-
-        # Reset sources after retrieving them
         self.tool_manager.reset_sources()
         
         # Update conversation history
         if session_id:
             self.session_manager.add_exchange(session_id, query, response)
         
-        # Return response with sources from tool searches
         return response, sources
     
     def get_course_analytics(self) -> Dict:
