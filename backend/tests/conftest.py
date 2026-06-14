@@ -114,3 +114,19 @@ def tool_use_response():
         return resp
 
     return _make
+
+
+@pytest.fixture
+def empty_content_response():
+    """Factory for a mock response with no content blocks.
+
+    Newer models can return an empty content array on a no-tools synthesis turn;
+    this exercises the safe text extraction path (no IndexError).
+    """
+    def _make():
+        resp = MagicMock()
+        resp.stop_reason = "end_turn"
+        resp.content = []
+        return resp
+
+    return _make
