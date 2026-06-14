@@ -11,7 +11,7 @@ Two kinds of fixtures live here:
 """
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -21,6 +21,8 @@ import pytest
 BACKEND = Path(__file__).resolve().parent.parent
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
+
+from fastapi.testclient import TestClient
 
 from models import Course, Lesson, CourseChunk
 from vector_store import VectorStore
@@ -130,3 +132,72 @@ def empty_content_response():
         return resp
 
     return _make
+
+
+# ── API endpoint test helpers ──────────────────────────────────────────────
+
+
+class _StubStaticFiles:
+    """Minimal ASGI stub replacing StaticFiles for tests.
+
+    A real class (not a MagicMock) is required because app.py defines
+    `class DevStaticFiles(StaticFiles)` — subclassing a MagicMock instance
+    raises TypeError. The stub also implements the ASGI interface so that
+    GET "/" returns 200 rather than hanging.
+    """
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    async def __call__(self, scope, receive, send):
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+
+@pytest.fixture(scope="session")
+def app_module():
+    """Return the app.py module with module-level side effects patched out.
+
+    app.py executes two things at import time that break in the test
+    environment:
+    1. `rag_system = RAGSystem(config)` — needs ChromaDB + Anthropic key.
+    2. `app.mount("/", StaticFiles(directory="../frontend", ...))` — the
+       directory doesn't exist and DevStaticFiles subclasses StaticFiles.
+
+    Both patches are released immediately after import; the mock instance
+    already stored on app.rag_system is what the route handlers close over.
+    """
+    with patch("rag_system.RAGSystem") as mock_rag_cls, \
+         patch("fastapi.staticfiles.StaticFiles", _StubStaticFiles):
+        mock_instance = MagicMock()
+        mock_instance.add_course_folder.return_value = (0, 0)
+        mock_rag_cls.return_value = mock_instance
+        sys.modules.pop("app", None)
+        import app as _app
+    yield _app
+    sys.modules.pop("app", None)
+
+
+@pytest.fixture
+def mock_rag(app_module):
+    """Yield the module-level rag_system mock, fully reset between tests.
+
+    `add_course_folder` is re-configured after the reset so the startup
+    event (which calls it if ../docs exists) never tries to unpack a bare
+    MagicMock as a (courses, chunks) tuple.
+    """
+    mock = app_module.rag_system
+    mock.reset_mock(return_value=True, side_effect=True)
+    mock.add_course_folder.return_value = (0, 0)
+    yield mock
+
+
+@pytest.fixture
+def api_client(mock_rag, app_module):
+    """TestClient for the FastAPI app.
+
+    mock_rag is listed first so it is set up (and add_course_folder
+    configured) before the TestClient triggers the app's startup event.
+    """
+    with TestClient(app_module.app) as client:
+        yield client
