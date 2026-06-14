@@ -1,9 +1,9 @@
 import chromadb
+import json
 from chromadb.config import Settings
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from models import Course, CourseChunk
-from sentence_transformers import SentenceTransformer
 
 @dataclass
 class SearchResults:
@@ -29,7 +29,7 @@ class SearchResults:
     
     def is_empty(self) -> bool:
         """Check if results are empty"""
-        return len(self.documents) == 0
+        return not self.documents
 
 class VectorStore:
     """Vector storage using ChromaDB for course content and metadata"""
@@ -75,17 +75,14 @@ class VectorStore:
         Returns:
             SearchResults object with documents and metadata
         """
-        # Step 1: Resolve course name if provided
         course_title = None
         if course_name:
             course_title = self._resolve_course_name(course_name)
             if not course_title:
                 return SearchResults.empty(f"No course found matching '{course_name}'")
-        
-        # Step 2: Build filter for content search
+
         filter_dict = self._build_filter(course_title, lesson_number)
-        
-        # Step 3: Search course content
+
         # Use provided limit or fall back to configured max_results
         search_limit = limit if limit is not None else self.max_results
         
@@ -134,18 +131,17 @@ class VectorStore:
     
     def add_course_metadata(self, course: Course):
         """Add course information to the catalog for semantic search"""
-        import json
-
         course_text = course.title
-        
+
         # Build lessons metadata and serialize as JSON string
-        lessons_metadata = []
-        for lesson in course.lessons:
-            lessons_metadata.append({
+        lessons_metadata = [
+            {
                 "lesson_number": lesson.lesson_number,
                 "lesson_title": lesson.title,
-                "lesson_link": lesson.lesson_link
-            })
+                "lesson_link": lesson.lesson_link,
+            }
+            for lesson in course.lessons
+        ]
         
         self.course_catalog.add(
             documents=[course_text],
@@ -204,18 +200,10 @@ class VectorStore:
     
     def get_course_count(self) -> int:
         """Get the total number of courses in the vector store"""
-        try:
-            results = self.course_catalog.get()
-            if results and 'ids' in results:
-                return len(results['ids'])
-            return 0
-        except Exception as e:
-            print(f"Error getting course count: {e}")
-            return 0
+        return len(self.get_existing_course_titles())
     
     def get_all_courses_metadata(self) -> List[Dict[str, Any]]:
         """Get metadata for all courses in the vector store"""
-        import json
         try:
             results = self.course_catalog.get()
             if results and 'metadatas' in results:
@@ -224,8 +212,7 @@ class VectorStore:
                 for metadata in results['metadatas']:
                     course_meta = metadata.copy()
                     if 'lessons_json' in course_meta:
-                        course_meta['lessons'] = json.loads(course_meta['lessons_json'])
-                        del course_meta['lessons_json']  # Remove the JSON string version
+                        course_meta['lessons'] = json.loads(course_meta.pop('lessons_json'))
                     parsed_metadata.append(course_meta)
                 return parsed_metadata
             return []
@@ -233,27 +220,28 @@ class VectorStore:
             print(f"Error getting courses metadata: {e}")
             return []
 
+    def _get_course_metadata(self, course_title: str) -> Optional[Dict[str, Any]]:
+        results = self.course_catalog.get(ids=[course_title])
+        if results and results.get('metadatas'):
+            return results['metadatas'][0]
+        return None
+
     def get_course_link(self, course_title: str) -> Optional[str]:
         """Get course link for a given course title"""
         try:
-            # Get course by ID (title is the ID)
-            results = self.course_catalog.get(ids=[course_title])
-            if results and 'metadatas' in results and results['metadatas']:
-                metadata = results['metadatas'][0]
+            metadata = self._get_course_metadata(course_title)
+            if metadata:
                 return metadata.get('course_link')
             return None
         except Exception as e:
             print(f"Error getting course link: {e}")
             return None
-    
+
     def get_lesson_link(self, course_title: str, lesson_number: int) -> Optional[str]:
         """Get lesson link for a given course title and lesson number"""
-        import json
         try:
-            # Get course by ID (title is the ID)
-            results = self.course_catalog.get(ids=[course_title])
-            if results and 'metadatas' in results and results['metadatas']:
-                metadata = results['metadatas'][0]
+            metadata = self._get_course_metadata(course_title)
+            if metadata:
                 lessons_json = metadata.get('lessons_json')
                 if lessons_json:
                     lessons = json.loads(lessons_json)
