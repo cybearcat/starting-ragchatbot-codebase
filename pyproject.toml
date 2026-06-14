@@ -13,3 +13,14 @@ dependencies = [
     "python-multipart==0.0.20",
     "python-dotenv==1.1.1",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.0",
+]
+
+[tool.pytest.ini_options]
+# Backend modules use flat imports (e.g. `from vector_store import ...`),
+# so the backend dir must be on sys.path for the tests to import them.
+pythonpath = ["backend"]
+testpaths = ["backend/tests"]
