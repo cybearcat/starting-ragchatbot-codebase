@@ -171,7 +171,10 @@ class ToolManager:
     
     def __init__(self):
         self.tools = {}
-    
+        # Sources accumulated across all tool calls in the current query, so a
+        # multi-round query (e.g. two searches) surfaces every round's sources.
+        self.accumulated_sources = []
+
     def register_tool(self, tool: Tool):
         """Register any tool that implements the Tool interface"""
         tool_def = tool.get_tool_definition()
@@ -189,19 +192,30 @@ class ToolManager:
         """Execute a tool by name with given parameters"""
         if tool_name not in self.tools:
             return f"Tool '{tool_name}' not found"
-        
-        return self.tools[tool_name].execute(**kwargs)
-    
+
+        tool = self.tools[tool_name]
+        result = tool.execute(**kwargs)
+
+        # Accumulate this call's sources (deduped by title+url, first-seen order)
+        # so sources from every round of a multi-round query are preserved.
+        new_sources = getattr(tool, 'last_sources', None)
+        if new_sources:
+            seen = {(s['title'], s['url']) for s in self.accumulated_sources}
+            for source in new_sources:
+                key = (source['title'], source['url'])
+                if key not in seen:
+                    seen.add(key)
+                    self.accumulated_sources.append(source)
+
+        return result
+
     def get_last_sources(self) -> list:
-        """Get sources from the last search operation"""
-        # Check all tools for last_sources attribute
-        for tool in self.tools.values():
-            if hasattr(tool, 'last_sources') and tool.last_sources:
-                return tool.last_sources
-        return []
+        """Get sources accumulated across all tool calls in the current query"""
+        return self.accumulated_sources
 
     def reset_sources(self):
-        """Reset sources from all tools that track sources"""
+        """Reset accumulated sources and each source-tracking tool's last_sources"""
+        self.accumulated_sources = []
         for tool in self.tools.values():
             if hasattr(tool, 'last_sources'):
                 tool.last_sources = []
